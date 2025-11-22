@@ -26,7 +26,6 @@ class CompanyPaginator(discord.ui.View):
             embed.add_field(
                 name=f"{company['name']}({company['id']})",
                 value=(
-                    f"{company['description']}\n\n"
                     f"資本金 {company['assets']}コイン\n"
                     f"給料 {company['salary']}コイン"
                 ),
