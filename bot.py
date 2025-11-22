@@ -9,31 +9,27 @@ import os
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-#会社一覧
-# ページング用ビュー
+# ---------------------
+# 会社一覧ビュー
+# ---------------------
 class CompanyPaginator(discord.ui.View):
     def __init__(self, companies, owner_id):
         super().__init__(timeout=None)
-        self.companies = companies
         self.original_companies = list(companies)  # 元の順番（設立順）
+        self.companies = list(companies)
         self.page = 0
         self.max_per_page = 5
         self.owner_id = owner_id
-        self.sort_mode = "設立日順"  # 現在の並び順をタイトルに表示
-        
+        self.sort_mode = "設立日順"
+
     def get_embed(self):
         start = self.page * self.max_per_page
         end = start + self.max_per_page
-        
-        # 並び順をタイトルに表示
         embed = discord.Embed(title=f"会社一覧（{self.sort_mode}）")
         for company in self.companies[start:end]:
             embed.add_field(
                 name=f"{company['name']}({company['id']})",
-                value=(
-                    f"資本金 {company['assets']}コイン\n"
-                    f"給料 {company['salary']}コイン"
-                ),
+                value=f"資本金 {company['assets']}コイン\n給料 {company['salary']}コイン",
                 inline=False
             )
         embed.set_footer(
@@ -47,10 +43,7 @@ class CompanyPaginator(discord.ui.View):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("他のユーザーのボタンは操作できません", ephemeral=True)
             return
-        if self.page > 0:
-            self.page -= 1
-        else:
-            self.page = (len(self.companies) - 1) // self.max_per_page  # 最後
+        self.page = (self.page - 1) % ((len(self.companies) - 1)//self.max_per_page + 1)
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
     # → 右ボタン
@@ -59,14 +52,10 @@ class CompanyPaginator(discord.ui.View):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("他のユーザーのボタンは操作できません", ephemeral=True)
             return
-        if (self.page + 1) * self.max_per_page < len(self.companies):
-            self.page += 1
-        else:
-            self.page = 0  # 最初
-
+        self.page = (self.page + 1) % ((len(self.companies) - 1)//self.max_per_page + 1)
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-    # ▼ 並び替えセレクト（矢印の右側に出る）
+    # 並び替えセレクト
     @discord.ui.select(
         placeholder="並び替えを選択",
         options=[
@@ -79,6 +68,7 @@ class CompanyPaginator(discord.ui.View):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("他のユーザーのボタンは操作できません", ephemeral=True)
             return
+
         selected = select.values[0]
         if selected == "created":
             self.companies = list(self.original_companies)
@@ -89,26 +79,25 @@ class CompanyPaginator(discord.ui.View):
         elif selected == "salary":
             self.companies.sort(key=lambda x: x["salary"], reverse=True)
             self.sort_mode = "給料順"
+
         self.page = 0
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-# /company list コマンド
+# ---------------------
+# /company_list コマンド
+# ---------------------
 @bot.tree.command(name="company_list", description="会社情報一覧を表示")
 async def company_list(interaction: discord.Interaction):
     async with aiohttp.ClientSession() as session:
         async with session.get("https://api.takasumibot.com/v3/companylist/") as resp:
             companies = await resp.json()
-    # ← ここが関数内に入っていなかったのがエラーの原因！
+
     view = CompanyPaginator(companies, interaction.user.id)
-    await interaction.response.send_message(
-        embed=view.get_embed(),
-        view=view
-    )
+    await interaction.response.send_message(embed=view.get_embed(), view=view)
 
-
-
-
+# ---------------------
 # /company_data コマンド
+# ---------------------
 @bot.tree.command(name="company_data", description="会社の収支情報を表示")
 @app_commands.describe(
     company_id="会社ID (10文字)",
@@ -126,8 +115,8 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
         await interaction.response.send_message("会社IDは10文字で指定してください", ephemeral=True)
         return
 
-    # 期間を決定
-    now = datetime.now(timezone.utc)  # UTC aware datetime
+    # 期間設定
+    now = datetime.now(timezone.utc)
     if period is None:
         delta = timedelta(days=1)
         period_text = "1日"
@@ -139,25 +128,22 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
         elif val.endswith("h"):
             delta = timedelta(hours=int(val[:-1]))
             period_text = val[:-1] + "時間"
-
     since_time = now - delta
 
     async with aiohttp.ClientSession() as session:
-        # 会社情報取得
         async with session.get(f"https://api.takasumibot.com/v3/company/{company_id}") as resp:
             if resp.status != 200:
                 await interaction.response.send_message("会社情報を取得できませんでした", ephemeral=True)
                 return
             company = await resp.json()
 
-        # 会社履歴取得
         async with session.get(f"https://api.takasumibot.com/v3/companyHistory/{company_id}") as resp:
             if resp.status != 200:
                 await interaction.response.send_message("会社履歴を取得できませんでした", ephemeral=True)
                 return
             history = await resp.json()
 
-    # 期間内の履歴を抽出
+    # 期間内の履歴を抽出（UTC aware）
     filtered_history = [
         h for h in history
         if datetime.fromisoformat(h["tradedAt"].replace("Z", "+00:00")) >= since_time
@@ -169,12 +155,13 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
     # ユーザー別集計
     user_summary = {}
     for h in filtered_history:
-        if h["userId"]:  # 空文字は対象外
-            if h["userId"] not in user_summary:
-                user_summary[h["userId"]] = {"total": 0, "count": 0}
+        uid = h.get("userId")
+        if uid:
+            if uid not in user_summary:
+                user_summary[uid] = {"total": 0, "count": 0}
             if h["amount"] > 0:
-                user_summary[h["userId"]]["total"] += h["amount"]
-                user_summary[h["userId"]]["count"] += 1
+                user_summary[uid]["total"] += h["amount"]
+                user_summary[uid]["count"] += 1
 
     # 埋め込み作成
     embed = discord.Embed(
@@ -187,9 +174,21 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
     embed.add_field(name="収入", value=total_income, inline=True)
     embed.add_field(name="支出", value=total_expense, inline=True)
 
-    # ユーザー別
     if user_summary:
-        lines = [f"{user_id}　{info['total']}　{info['count']}" for user_id, info in user_summary.items()]
+        lines = [f"{uid}　{info['total']}　{info['count']}" for uid, info in user_summary.items()]
         embed.add_field(name="ユーザー別収入", value="\n".join(lines), inline=False)
 
     await interaction.response.send_message(embed=embed)
+
+# ---------------------
+# 起動
+# ---------------------
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print(f"Logged in as {bot.user}!")
+
+token = os.getenv("DISCORD_TOKEN")
+if not token:
+    raise ValueError("環境変数 DISCORD_TOKEN が設定されていません")
+bot.run(token)
