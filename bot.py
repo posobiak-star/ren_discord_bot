@@ -2,6 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import aiohttp
+import os
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -60,4 +61,5 @@ async def on_ready():
     await bot.tree.sync()
     print(f"Logged in as {bot.user}!")
 
-bot.run("YOUR_TOKEN_HERE")
+token = os.getenv("DISCORD_TOKEN")
+bot.run(token)
