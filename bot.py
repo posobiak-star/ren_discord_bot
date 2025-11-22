@@ -4,23 +4,23 @@ from discord import app_commands
 import aiohttp
 import os
 
-# Intentsの設定
+# Intents
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-
-# ページング用カスタムビュー
+# ページング用ビュー
 class CompanyPaginator(discord.ui.View):
     def __init__(self, companies, owner_id):
         super().__init__(timeout=None)
         self.companies = companies
         self.page = 0
         self.max_per_page = 10
-        self.owner_id = owner_id  # コマンド実行者のID
+        self.owner_id = owner_id  # 操作できるユーザー
 
     def get_embed(self):
         start = self.page * self.max_per_page
         end = start + self.max_per_page
+        
         embed = discord.Embed(title="会社一覧")
         for company in self.companies[start:end]:
             embed.add_field(
@@ -32,14 +32,15 @@ class CompanyPaginator(discord.ui.View):
                 ),
                 inline=False
             )
-        embed.set_footer(text=f"ページ {self.page+1}/{(len(self.companies)-1)//self.max_per_page + 1}")
+        embed.set_footer(
+            text=f"ページ {self.page+1}/{(len(self.companies)-1)//self.max_per_page + 1}"
+        )
         return embed
 
-    
     @discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary)
     async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("他のユーザーのコマンドは操作できません", ephemeral=True)
+            await interaction.response.send_message("このボタンはあなた専用です。", ephemeral=True)
             return
         if self.page > 0:
             self.page -= 1
@@ -50,32 +51,35 @@ class CompanyPaginator(discord.ui.View):
     @discord.ui.button(label="➡️", style=discord.ButtonStyle.secondary)
     async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("他のユーザーのコマンドは操作できません", ephemeral=True)
+            await interaction.response.send_message("このボタンはあなた専用です。", ephemeral=True)
             return
         if (self.page + 1) * self.max_per_page < len(self.companies):
             self.page += 1
         else:
-            self.page = 0  # 先頭へ戻る
+            self.page = 0  # 先頭へ
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
 
 # /company list コマンド
-@bot.tree.command(name="company_list", description="会社情報一覧")
+@bot.tree.command(name="company_list", description="会社情報一覧を表示")
 async def company_list(interaction: discord.Interaction):
     async with aiohttp.ClientSession() as session:
         async with session.get("https://api.takasumibot.com/v3/companylist/") as resp:
             companies = await resp.json()
-view = CompanyPaginator(companies, interaction.user.id)
-await interaction.response.send_message(embed=view.get_embed(), view=view)
+    # ← ここが関数内に入っていなかったのがエラーの原因！
+    view = CompanyPaginator(companies, interaction.user.id)
+    await interaction.response.send_message(
+        embed=view.get_embed(),
+        view=view
+    )
 
 
-# 起動イベント
+# 起動
 @bot.event
 async def on_ready():
     await bot.tree.sync()
     print(f"Logged in as {bot.user}!")
 
-# トークン取得と起動
 token = os.getenv("DISCORD_TOKEN")
 if not token:
     raise ValueError("環境変数 DISCORD_TOKEN が設定されていません")
