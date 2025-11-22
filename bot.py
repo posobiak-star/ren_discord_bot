@@ -25,11 +25,14 @@ class CompanyPaginator(discord.ui.View):
     def get_embed(self):
         start = self.page * self.max_per_page
         end = start + self.max_per_page
-        embed = discord.Embed(title=f"会社一覧（{self.sort_mode}）")
+        embed = discord.Embed(title=f"会社一覧（{self.sort_mode}）", color=discord.Color.red())
         for company in self.companies[start:end]:
             embed.add_field(
                 name=f"{company['name']}({company['id']})",
-                value=f"資本金 {company['assets']}コイン\n給料 {company['salary']}コイン",
+                value=(
+                    f"資本金: {company['assets']}コイン\n"
+                    f"時給: {company['salary']}コイン"
+                ),
                 inline=False
             )
         embed.set_footer(
@@ -37,7 +40,6 @@ class CompanyPaginator(discord.ui.View):
         )
         return embed
 
-    # ← 左ボタン
     @discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary)
     async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
@@ -46,7 +48,6 @@ class CompanyPaginator(discord.ui.View):
         self.page = (self.page - 1) % ((len(self.companies) - 1)//self.max_per_page + 1)
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-    # → 右ボタン
     @discord.ui.button(label="➡️", style=discord.ButtonStyle.secondary)
     async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
@@ -55,7 +56,6 @@ class CompanyPaginator(discord.ui.View):
         self.page = (self.page + 1) % ((len(self.companies) - 1)//self.max_per_page + 1)
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-    # 並び替えセレクト
     @discord.ui.select(
         placeholder="並び替えを選択",
         options=[
@@ -115,7 +115,6 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
         await interaction.response.send_message("会社IDは10文字で指定してください", ephemeral=True)
         return
 
-    # 期間設定
     now = datetime.now(timezone.utc)
     if period is None:
         delta = timedelta(days=1)
@@ -143,7 +142,6 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
                 return
             history = await resp.json()
 
-    # 期間内の履歴を抽出（UTC aware）
     filtered_history = [
         h for h in history
         if datetime.fromisoformat(h["tradedAt"].replace("Z", "+00:00")) >= since_time
@@ -166,29 +164,20 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
     # 埋め込み作成
     embed = discord.Embed(
         title=f"💮 {company['name']} 会社の収支情報 ({period_text})",
-        color=discord.Color.blue()
+        color=discord.Color.red()
     )
-    embed.add_field(name="会社ID", value=company["id"], inline=False)
-    embed.add_field(name="資本金", value=company["assets"], inline=True)
-    embed.add_field(name="時給", value=company["salary"], inline=True)
-    embed.add_field(name="収入", value=total_income, inline=True)
-    embed.add_field(name="支出", value=total_expense, inline=True)
+    # 資本金 → 時給 → 収入 → 支出
+    embed.add_field(name="資本金", value=f"{company['assets']}コイン", inline=True)
+    embed.add_field(name="時給", value=f"{company['salary']}コイン", inline=True)
+    embed.add_field(name="収入", value=f"{total_income}コイン", inline=True)
+    embed.add_field(name="支出", value=f"{total_expense}コイン", inline=True)
 
     if user_summary:
-        lines = [f"{uid}　{info['total']}　{info['count']}" for uid, info in user_summary.items()]
+        lines = []
+        for uid, info in user_summary.items():
+            # メンション形式にする
+            mention = f"<@{uid}>"
+            lines.append(f"{mention}　{info['total']}コイン　{info['count']}回")
         embed.add_field(name="ユーザー別収入", value="\n".join(lines), inline=False)
 
     await interaction.response.send_message(embed=embed)
-
-# ---------------------
-# 起動
-# ---------------------
-@bot.event
-async def on_ready():
-    await bot.tree.sync()
-    print(f"Logged in as {bot.user}!")
-
-token = os.getenv("DISCORD_TOKEN")
-if not token:
-    raise ValueError("環境変数 DISCORD_TOKEN が設定されていません")
-bot.run(token)
