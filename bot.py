@@ -14,20 +14,20 @@ class CompanyPaginator(discord.ui.View):
         super().__init__(timeout=None)
         self.companies = companies
         self.page = 0
-        self.max_per_page = 10
+        self.max_per_page = 5
 
-    def get_embed(self):
-        start = self.page * self.max_per_page
-        end = start + self.max_per_page
-        embed = discord.Embed(title="会社一覧")
-        for company in self.companies[start:end]:
-            embed.add_field(
-                name=f"{company['name']}({company['id']})",
-                value=f"資本金 {company['assets']}コイン\n給料 {company['salary']}コイン",
-                inline=False
-            )
-        embed.set_footer(text=f"ページ {self.page+1}/{(len(self.companies)-1)//self.max_per_page + 1}")
-        return embed
+def get_embed(self):
+    start = self.page * self.max_per_page
+    end = start + self.max_per_page
+    embed = discord.Embed(title="会社一覧")
+    for company in self.companies[start:end]:
+        embed.add_field(
+            name=f"{company['name']}({company['id']})",
+            value=f"{company['description']}\n資本金 {company['assets']}コイン\n給料 {company['salary']}コイン",
+            inline=False
+        )
+    embed.set_footer(text=f"ページ {self.page+1}/{(len(self.companies)-1)//self.max_per_page + 1}")
+    return embed
 
 
     @discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary)
