@@ -22,7 +22,6 @@ class CompanyPaginator(discord.ui.View):
         start = self.page * self.max_per_page
         end = start + self.max_per_page
         embed = discord.Embed(title="会社一覧")
-
         for company in self.companies[start:end]:
             embed.add_field(
                 name=f"{company['name']}({company['id']})",
@@ -33,38 +32,31 @@ class CompanyPaginator(discord.ui.View):
                 ),
                 inline=False
             )
-
         embed.set_footer(text=f"ページ {self.page+1}/{(len(self.companies)-1)//self.max_per_page + 1}")
         return embed
 
+    
     @discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary)
     async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
-
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("他のユーザーのコマンドは操作できません", ephemeral=True)
             return
-
         if self.page > 0:
             self.page -= 1
         else:
             self.page = (len(self.companies) - 1) // self.max_per_page  # 最後のページへ
-
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
     @discord.ui.button(label="➡️", style=discord.ButtonStyle.secondary)
     async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
-
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("他のユーザーのコマンドは操作できません", ephemeral=True)
             return
-
         if (self.page + 1) * self.max_per_page < len(self.companies):
             self.page += 1
         else:
             self.page = 0  # 先頭へ戻る
-
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
-
 
 
 # /company list コマンド
