@@ -29,7 +29,7 @@ class CompanyPaginator(discord.ui.View):
         embed.set_footer(text=f"ページ {self.page+1}/{(len(self.companies)-1)//self.max_per_page + 1}")
         return embed
 
-    # 前ページボタン
+
     @discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary)
     async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.page > 0:
@@ -38,7 +38,6 @@ class CompanyPaginator(discord.ui.View):
             self.page = (len(self.companies) - 1) // self.max_per_page
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-    # 次ページボタン
     @discord.ui.button(label="➡️", style=discord.ButtonStyle.secondary)
     async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
         if (self.page + 1) * self.max_per_page < len(self.companies):
@@ -48,7 +47,7 @@ class CompanyPaginator(discord.ui.View):
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
 # /company list コマンド
-@bot.tree.command(name="list", description="会社情報一覧")
+@bot.tree.command(name="company list", description="会社情報一覧")
 async def company_list(interaction: discord.Interaction):
     async with aiohttp.ClientSession() as session:
         async with session.get("https://api.takasumibot.com/v3/companylist/") as resp:
