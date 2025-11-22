@@ -8,6 +8,7 @@ import os
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+#会社一覧
 # ページング用ビュー
 class CompanyPaginator(discord.ui.View):
     def __init__(self, companies, owner_id):
@@ -90,7 +91,6 @@ class CompanyPaginator(discord.ui.View):
         self.page = 0
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-
 # /company list コマンド
 @bot.tree.command(name="company_list", description="会社情報一覧を表示")
 async def company_list(interaction: discord.Interaction):
@@ -103,6 +103,8 @@ async def company_list(interaction: discord.Interaction):
         embed=view.get_embed(),
         view=view
     )
+
+
 
 
 # 起動
