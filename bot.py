@@ -171,7 +171,7 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
     embed.add_field(name="時給", value=f"{company['salary']}コイン", inline=True)
     embed.add_field(name="収入", value=f"{total_income}コイン", inline=True)
     embed.add_field(name="支出", value=f"{total_expense}コイン", inline=True)
-
+    
     if user_summary:
         lines = []
         for uid, info in user_summary.items():
