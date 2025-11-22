@@ -28,32 +28,35 @@ class CompanyPaginator(discord.ui.View):
         embed.set_footer(text=f"ページ {self.page+1}/{(len(self.companies)-1)//self.max_per_page + 1}")
         return embed
 
-    @discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary)
-    async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.page > 0:
-            self.page -= 1
-            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+# CompanyPaginator クラス内のボタン部分を修正
+@discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary)
+async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if self.page > 0:
+        self.page -= 1
+    else:
+        # 先頭なら最後のページに戻る
+        self.page = (len(self.companies) - 1) // self.max_per_page
+    await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-    @discord.ui.button(label="➡️", style=discord.ButtonStyle.secondary)
-    async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if (self.page + 1) * self.max_per_page < len(self.companies):
-            self.page += 1
-            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+@discord.ui.button(label="➡️", style=discord.ButtonStyle.secondary)
+async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if (self.page + 1) * self.max_per_page < len(self.companies):
+        self.page += 1
+    else:
+        # 最後のページなら先頭に戻る
+        self.page = 0
+    await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
 # /company list コマンド
-@bot.tree.command(name="company", description="会社情報一覧")
-@app_commands.describe(action="list を指定してください")
-async def company(interaction: discord.Interaction, action: str):
-    if action != "list":
-        await interaction.response.send_message("無効なアクションです", ephemeral=True)
-        return
-
+@bot.tree.command(name="list", description="会社情報一覧")
+async def company_list(interaction: discord.Interaction):
     async with aiohttp.ClientSession() as session:
         async with session.get("https://api.takasumibot.com/v3/companylist/") as resp:
             companies = await resp.json()
 
     view = CompanyPaginator(companies)
     await interaction.response.send_message(embed=view.get_embed(), view=view)
+
 
 # 起動
 @bot.event
