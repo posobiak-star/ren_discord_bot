@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import aiohttp
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 
 # Intents
@@ -127,7 +127,7 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
         return
 
     # 期間を決定
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)  # UTC aware datetime
     if period is None:
         delta = timedelta(days=1)
         period_text = "1日"
@@ -189,23 +189,7 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
 
     # ユーザー別
     if user_summary:
-        lines = []
-        for user_id, info in user_summary.items():
-            lines.append(f"{user_id}　{info['total']}　{info['count']}")
+        lines = [f"{user_id}　{info['total']}　{info['count']}" for user_id, info in user_summary.items()]
         embed.add_field(name="ユーザー別収入", value="\n".join(lines), inline=False)
 
     await interaction.response.send_message(embed=embed)
-
-
-
-
-# 起動
-@bot.event
-async def on_ready():
-    await bot.tree.sync()
-    print(f"Logged in as {bot.user}!")
-
-token = os.getenv("DISCORD_TOKEN")
-if not token:
-    raise ValueError("環境変数 DISCORD_TOKEN が設定されていません")
-bot.run(token)
