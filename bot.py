@@ -1,9 +1,10 @@
 import discord
-from discord import app_commands
 from discord.ext import commands
+from discord import app_commands
 import aiohttp
 import os
 
+# Intentsの設定
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -28,24 +29,23 @@ class CompanyPaginator(discord.ui.View):
         embed.set_footer(text=f"ページ {self.page+1}/{(len(self.companies)-1)//self.max_per_page + 1}")
         return embed
 
-# CompanyPaginator クラス内のボタン部分を修正
-@discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary)
-async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
-    if self.page > 0:
-        self.page -= 1
-    else:
-        # 先頭なら最後のページに戻る
-        self.page = (len(self.companies) - 1) // self.max_per_page
-    await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    # 前ページボタン
+    @discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary)
+    async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.page > 0:
+            self.page -= 1
+        else:
+            self.page = (len(self.companies) - 1) // self.max_per_page
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-@discord.ui.button(label="➡️", style=discord.ButtonStyle.secondary)
-async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
-    if (self.page + 1) * self.max_per_page < len(self.companies):
-        self.page += 1
-    else:
-        # 最後のページなら先頭に戻る
-        self.page = 0
-    await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    # 次ページボタン
+    @discord.ui.button(label="➡️", style=discord.ButtonStyle.secondary)
+    async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if (self.page + 1) * self.max_per_page < len(self.companies):
+            self.page += 1
+        else:
+            self.page = 0
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
 # /company list コマンド
 @bot.tree.command(name="list", description="会社情報一覧")
@@ -57,12 +57,14 @@ async def company_list(interaction: discord.Interaction):
     view = CompanyPaginator(companies)
     await interaction.response.send_message(embed=view.get_embed(), view=view)
 
-
-# 起動
+# 起動イベント
 @bot.event
 async def on_ready():
     await bot.tree.sync()
     print(f"Logged in as {bot.user}!")
 
+# トークン取得と起動
 token = os.getenv("DISCORD_TOKEN")
+if not token:
+    raise ValueError("環境変数 DISCORD_TOKEN が設定されていません")
 bot.run(token)
