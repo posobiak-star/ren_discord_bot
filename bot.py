@@ -14,21 +14,21 @@ class CompanyPaginator(discord.ui.View):
         super().__init__(timeout=None)
         self.companies = companies
         self.page = 0
-        self.max_per_page = 5
+        self.max_per_page = 10
 
-def get_embed(self):
-    start = self.page * self.max_per_page
-    end = start + self.max_per_page
-    embed = discord.Embed(title="会社一覧")
-    for company in self.companies[start:end]:
-        embed.add_field(
-            name=f"{company['name']}({company['id']})",
-            value=f"{company['description']}\n資本金 {company['assets']}コイン\n給料 {company['salary']}コイン",
-            inline=False
-        )
-    embed.set_footer(text=f"ページ {self.page+1}/{(len(self.companies)-1)//self.max_per_page + 1}")
-    return embed
-
+    # メソッドはクラス内に書く
+    def get_embed(self):
+        start = self.page * self.max_per_page
+        end = start + self.max_per_page
+        embed = discord.Embed(title="会社一覧")
+        for company in self.companies[start:end]:
+            embed.add_field(
+                name=f"{company['name']}({company['id']})",
+                value=f"{company['description']}\n資本金 {company['assets']}コイン\n給料 {company['salary']}コイン",
+                inline=False
+            )
+        embed.set_footer(text=f"ページ {self.page+1}/{(len(self.companies)-1)//self.max_per_page + 1}")
+        return embed
 
     @discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary)
     async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -45,6 +45,7 @@ def get_embed(self):
         else:
             self.page = 0
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
 
 # /company list コマンド
 @bot.tree.command(name="company_list", description="会社情報一覧")
