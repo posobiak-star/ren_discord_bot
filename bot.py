@@ -183,25 +183,26 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
                 user_summary[uid]["total"] += h["amount"]
                 user_summary[uid]["count"] += 1
 
-    # ------------------ 埋め込み ------------------
-    embed = discord.Embed(
-        title=f"💮 {company['name']} の収支情報（{period_text}）",
-        color=discord.Color.red()
-    )
+# ------------------ 埋め込み ------------------
+embed = discord.Embed(
+    title=f"💮 {company['name']} の収支情報（{period_text}）",
+    color=discord.Color.red()
+)
 
-    embed.add_field(name="資本金", value=f"{company['assets']}コイン", inline=True)
-    embed.add_field(name="時給", value=f"{company['salary']}コイン", inline=True)
-    embed.add_field(name="収入", value=f"{total_income}コイン", inline=True)
-    embed.add_field(name="支出", value=f"{total_expense}コイン", inline=True)
+# 資本金と時給は縦並び
+embed.add_field(name="資本金", value=f"{company['assets']}コイン", inline=False)
+embed.add_field(name="時給", value=f"{company['salary']}コイン", inline=False)
+# 収入と支出を横並び
+embed.add_field(name="収入", value=f"{total_income}コイン", inline=True)
+embed.add_field(name="支出", value=f"{total_expense}コイン", inline=True)
 
-    if user_summary:
-        lines = []
-        for uid, info in user_summary.items():
-            mention = f"<@{uid}>"
-            lines.append(f"{mention}　{info['total']}コイン　{info['count']}回")
-        embed.add_field(name="ユーザー別収入", value="\n".join(lines), inline=False)
-
-    await interaction.response.send_message(embed=embed)
+# ユーザー別集計
+if user_summary:
+    lines = []
+    for uid, info in user_summary.items():
+        mention = f"<@{uid}>"
+        lines.append(f"{mention}　{info['total']}コイン　{info['count']}回")
+    embed.add_field(name="ユーザー別収入", value="\n".join(lines), inline=False)
 
 
 # ============================================================
