@@ -47,7 +47,7 @@ class CompanyPaginator(discord.ui.View):
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
 # /company list コマンド
-@bot.tree.command(name="company list", description="会社情報一覧")
+@bot.tree.command(name="company_list", description="会社情報一覧")
 async def company_list(interaction: discord.Interaction):
     async with aiohttp.ClientSession() as session:
         async with session.get("https://api.takasumibot.com/v3/companylist/") as resp:
