@@ -13,16 +13,18 @@ class CompanyPaginator(discord.ui.View):
     def __init__(self, companies, owner_id):
         super().__init__(timeout=None)
         self.companies = companies
-        self.original_companies = list(companies)  # 元の順番を保存
+        self.original_companies = list(companies)  # 元の順番（設立順）
         self.page = 0
-        self.max_per_page = 10
-        self.owner_id = owner_id  # 操作できるユーザー
-
+        self.max_per_page = 5
+        self.owner_id = owner_id
+        self.sort_mode = "設立日順"  # 現在の並び順をタイトルに表示
+        
     def get_embed(self):
         start = self.page * self.max_per_page
         end = start + self.max_per_page
         
-        embed = discord.Embed(title="会社一覧")
+        # 並び順をタイトルに表示
+        embed = discord.Embed(title=f"会社一覧（{self.sort_mode}）")
         for company in self.companies[start:end]:
             embed.add_field(
                 name=f"{company['name']}({company['id']})",
@@ -37,6 +39,7 @@ class CompanyPaginator(discord.ui.View):
         )
         return embed
 
+    # ← 左ボタン
     @discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary)
     async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
@@ -45,9 +48,10 @@ class CompanyPaginator(discord.ui.View):
         if self.page > 0:
             self.page -= 1
         else:
-            self.page = (len(self.companies) - 1) // self.max_per_page  # 最後のページへ
+            self.page = (len(self.companies) - 1) // self.max_per_page  # 最後
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
+    # → 右ボタン
     @discord.ui.button(label="➡️", style=discord.ButtonStyle.secondary)
     async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
@@ -56,10 +60,11 @@ class CompanyPaginator(discord.ui.View):
         if (self.page + 1) * self.max_per_page < len(self.companies):
             self.page += 1
         else:
-            self.page = 0  # 先頭へ
+            self.page = 0  # 最初
+
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-
+    # ▼ 並び替えセレクト（矢印の右側に出る）
     @discord.ui.select(
         placeholder="並び替えを選択",
         options=[
@@ -70,21 +75,19 @@ class CompanyPaginator(discord.ui.View):
     )
     async def sort_select(self, interaction: discord.Interaction, select: discord.ui.Select):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("他のユーザーのコマンドは操作できません", ephemeral=True)
+            await interaction.response.send_message("他のユーザーのボタンは操作できません", ephemeral=True)
             return
         selected = select.values[0]
-        
-        # 設立日順 → API のままの順に戻す
         if selected == "created":
-            # self.original_companies を基に復元
             self.companies = list(self.original_companies)
-        # 資本金が高い順
+            self.sort_mode = "設立日順"
         elif selected == "assets":
             self.companies.sort(key=lambda x: x["assets"], reverse=True)
-        # 給料が高い順
+            self.sort_mode = "資本金順"
         elif selected == "salary":
             self.companies.sort(key=lambda x: x["salary"], reverse=True)
-        self.page = 0  # ページをリセット
+            self.sort_mode = "給料順"
+        self.page = 0
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
 
