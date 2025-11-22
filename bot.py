@@ -189,20 +189,28 @@ embed = discord.Embed(
     color=discord.Color.red()
 )
 
-# 資本金と時給は縦並び
+# 埋め込み作成
+embed = discord.Embed(
+    title=f"💮 {company['name']} 会社の収支情報 ({period_text})",
+    color=discord.Color.red()
+)
+
+# 縦に並べる項目
 embed.add_field(name="資本金", value=f"{company['assets']}コイン", inline=False)
 embed.add_field(name="時給", value=f"{company['salary']}コイン", inline=False)
-# 収入と支出を横並び
+
+# 横並びにしたい収入と支出
 embed.add_field(name="収入", value=f"{total_income}コイン", inline=True)
 embed.add_field(name="支出", value=f"{total_expense}コイン", inline=True)
 
-# ユーザー別集計
+# ユーザー別収入
 if user_summary:
     lines = []
     for uid, info in user_summary.items():
         mention = f"<@{uid}>"
         lines.append(f"{mention}　{info['total']}コイン　{info['count']}回")
     embed.add_field(name="ユーザー別収入", value="\n".join(lines), inline=False)
+
 
 
 # ============================================================
