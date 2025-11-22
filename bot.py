@@ -40,7 +40,7 @@ class CompanyPaginator(discord.ui.View):
     @discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary)
     async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("このボタンはあなた専用です。", ephemeral=True)
+            await interaction.response.send_message("他のユーザーのボタンは操作できません", ephemeral=True)
             return
         if self.page > 0:
             self.page -= 1
@@ -51,7 +51,7 @@ class CompanyPaginator(discord.ui.View):
     @discord.ui.button(label="➡️", style=discord.ButtonStyle.secondary)
     async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("このボタンはあなた専用です。", ephemeral=True)
+            await interaction.response.send_message("他のユーザーのボタンは操作できません", ephemeral=True)
             return
         if (self.page + 1) * self.max_per_page < len(self.companies):
             self.page += 1
