@@ -41,7 +41,7 @@ class CompanyPaginator(discord.ui.View):
     async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
         # ← 追加：他のユーザーが触ったら拒否
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("これはあなた専用の操作です。", ephemeral=True)
+            await interaction.response.send_message("他のユーザのコマンドは操作できません", ephemeral=True)
             return
         if self.page > 0:
             self.page -= 1
@@ -54,7 +54,7 @@ class CompanyPaginator(discord.ui.View):
     async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
         # ← 追加：他のユーザーが触ったら拒否
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("これはあなた専用の操作です。", ephemeral=True)
+            await interaction.response.send_message("他のユーザのコマンドは操作できません", ephemeral=True)
             return
         if (self.page + 1) * self.max_per_page < len(self.companies):
             self.page += 1
