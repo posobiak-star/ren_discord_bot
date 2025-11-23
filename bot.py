@@ -247,6 +247,7 @@ class AdminSelect(discord.ui.Select):
     
 async def callback(self, interaction: discord.Interaction):
     if self.values[0] == "list_users":
+        # Supabase からユーザー取得（新しい順）
         data = supabase.table("discord_oauth_users").select("*").order("created_at", desc=True).execute()
         
         if not data.data:
@@ -257,14 +258,13 @@ async def callback(self, interaction: discord.Interaction):
         for u in data.data:
             embed.add_field(name=f"{u['display_name']} ({u['username']})", value=f"ID: {u['discord_user_id']}", inline=False)
         
-        # ✅ await は async 関数内で実行
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        
-        elif self.values[0] == "remove_user":
-            # モーダルでユーザーID入力
-            modal = AdminRemoveUserModal()
-            await interaction.response.send_modal(modal)
+    elif self.values[0] == "remove_user":
+        # モーダルでユーザーID入力
+        modal = AdminRemoveUserModal()
+        await interaction.response.send_modal(modal)
+
 
 
 class AdminRemoveUserModal(discord.ui.Modal, title="ユーザー連携解除"):
