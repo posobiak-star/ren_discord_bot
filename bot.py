@@ -5,7 +5,6 @@ import aiohttp
 from datetime import datetime, timedelta, timezone
 import os
 
-
 # Intents
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -151,35 +150,36 @@ class CompanyPaginator(discord.ui.View):
 
 
     # ------------------ 期間処理 ------------------
+async def fetch_company_data(company_id: str, period_value: str = None):
+    from datetime import datetime, timedelta, timezone
+
+    # 期間処理
     delta = timedelta(days=1)
     period_text = "1日"
-
-    if period:
-        val = period.value
-        if val.endswith("d"):
-            delta = timedelta(days=int(val[:-1]))
-            period_text = f"{val[:-1]}日"
-        elif val.endswith("h"):
-            delta = timedelta(hours=int(val[:-1]))
-            period_text = f"{val[:-1]}時間"
+    if period_value:
+        if period_value.endswith("d"):
+            delta = timedelta(days=int(period_value[:-1]))
+            period_text = f"{period_value[:-1]}日"
+        elif period_value.endswith("h"):
+            delta = timedelta(hours=int(period_value[:-1]))
+            period_text = f"{period_value[:-1]}時間"
 
     now = datetime.now(timezone.utc)
     since_time = now - delta
 
-    # ------------------ API取得 ------------------
+    # API取得
     async with aiohttp.ClientSession() as session:
-
         async with session.get(f"https://api.takasumibot.com/v3/company/{company_id}") as resp:
             if resp.status != 200:
-                return await interaction.response.send_message("会社情報の取得に失敗しました", ephemeral=True)
+                return None, None, None
             company = await resp.json()
 
         async with session.get(f"https://api.takasumibot.com/v3/companyHistory/{company_id}") as resp:
             if resp.status != 200:
-                return await interaction.response.send_message("会社履歴の取得に失敗しました", ephemeral=True)
+                return company, None, None
             history = await resp.json()
 
-    # ------------------ 履歴フィルター ------------------
+    # 履歴フィルター
     filtered_history = []
     for h in history:
         try:
@@ -189,7 +189,7 @@ class CompanyPaginator(discord.ui.View):
         except:
             continue
 
-    # ------------------ 集計 ------------------
+    # 集計
     total_income = sum(h["amount"] for h in filtered_history if h["amount"] > 0)
     total_expense = -sum(h["amount"] for h in filtered_history if h["amount"] < 0)
 
@@ -203,6 +203,9 @@ class CompanyPaginator(discord.ui.View):
             if h["amount"] > 0:
                 user_summary[uid]["total"] += h["amount"]
                 user_summary[uid]["count"] += 1
+
+    return company, total_income, total_expense, user_summary, period_text
+
 
     # 埋め込み作成（←必ず company_data の中）
     embed = discord.Embed(
