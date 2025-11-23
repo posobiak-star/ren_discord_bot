@@ -5,9 +5,61 @@ import aiohttp
 from datetime import datetime, timedelta, timezone
 import os
 
+
 # Intents
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+
+# ============================================================
+# /company_list コマンド
+# ============================================================
+@bot.tree.command(name="company_list", description="会社情報一覧を表示")
+async def company_list(interaction: discord.Interaction):
+    async with aiohttp.ClientSession() as session:
+        async with session.get("https://api.takasumibot.com/v3/companylist/") as resp:
+            companies = await resp.json()
+
+    view = CompanyPaginator(companies, interaction.user.id)
+    await interaction.response.send_message(embed=view.get_embed(), view=view)
+
+
+# ============================================================
+# /company_data コマンド
+# ============================================================
+@bot.tree.command(name="company_money", description="会社の収支情報を表示")
+@app_commands.describe(
+    company_id="会社ID（10文字）",
+    period="表示する期間"
+)
+@app_commands.choices(period=[
+    app_commands.Choice(name="7日", value="7d"),
+    app_commands.Choice(name="3日", value="3d"),
+    app_commands.Choice(name="1日", value="1d"),
+    app_commands.Choice(name="12時間", value="12h"),
+    app_commands.Choice(name="6時間", value="6h"),
+])
+async def company_data(interaction: discord.Interaction, company_id: str, period: app_commands.Choice[str] = None):
+
+    if len(company_id) != 10:
+        return await interaction.response.send_message("会社IDは10文字で指定してください", ephemeral=True)
+
+
+# ============================================================
+# /forms コマンド（コマンド登録）
+# ============================================================
+from discord import app_commands
+from discord.ext import commands
+import discord
+from forms_handler import OpinionModalHandler  # モーダル処理を別ファイルで定義
+
+@bot.tree.command(name="forms", description="意見や要望を送信します")
+async def forms(interaction: discord.Interaction):
+    # モーダルを表示
+    modal = OpinionModalHandler(interaction.user.id)
+    await interaction.response.send_modal(modal)
+
 
 
 # ============================================================
@@ -96,38 +148,7 @@ class CompanyPaginator(discord.ui.View):
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
 
-# ============================================================
-# /company_list コマンド
-# ============================================================
-@bot.tree.command(name="company_list", description="会社情報一覧を表示")
-async def company_list(interaction: discord.Interaction):
-    async with aiohttp.ClientSession() as session:
-        async with session.get("https://api.takasumibot.com/v3/companylist/") as resp:
-            companies = await resp.json()
 
-    view = CompanyPaginator(companies, interaction.user.id)
-    await interaction.response.send_message(embed=view.get_embed(), view=view)
-
-
-# ============================================================
-# /company_data コマンド
-# ============================================================
-@bot.tree.command(name="company_money", description="会社の収支情報を表示")
-@app_commands.describe(
-    company_id="会社ID（10文字）",
-    period="表示する期間"
-)
-@app_commands.choices(period=[
-    app_commands.Choice(name="7日", value="7d"),
-    app_commands.Choice(name="3日", value="3d"),
-    app_commands.Choice(name="1日", value="1d"),
-    app_commands.Choice(name="12時間", value="12h"),
-    app_commands.Choice(name="6時間", value="6h"),
-])
-async def company_data(interaction: discord.Interaction, company_id: str, period: app_commands.Choice[str] = None):
-
-    if len(company_id) != 10:
-        return await interaction.response.send_message("会社IDは10文字で指定してください", ephemeral=True)
 
     # ------------------ 期間処理 ------------------
     delta = timedelta(days=1)
@@ -209,6 +230,47 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
         embed.add_field(name="ユーザー別収入", value="\n".join(lines), inline=False)
 
     await interaction.response.send_message(embed=embed)
+
+
+
+
+class OpinionModalHandler(discord.ui.Modal, title="意見フォーム"):
+    opinion = discord.ui.TextInput(
+        label="意見を入力してください",
+        style=discord.TextStyle.paragraph,
+        placeholder="ここに意見を書いてください",
+        required=True,
+        max_length=500
+    )
+
+    def __init__(self, author_id):
+        super().__init__()
+        self.author_id = author_id  # 入力者のIDを保持
+
+    async def on_submit(self, interaction: discord.Interaction):
+        content = str(self.opinion.value)
+
+        # DM送信先ユーザーID
+        target_user_id = 1250410219662606437
+        target_user = interaction.client.get_user(target_user_id)
+        if target_user is None:
+            target_user = await interaction.client.fetch_user(target_user_id)
+
+        try:
+            await target_user.send(
+                f"📩 **新しい意見が届きました！**\n"
+                f"送信者: <@{self.author_id}>\n"
+                f"内容:\n```\n{content}\n```"
+            )
+        except:
+            pass  # DM送信できなくても止めない
+
+        # 入力者には確認メッセージ
+        await interaction.response.send_message(
+            "送信しました！ありがとうございます！", ephemeral=True
+        )
+
+
 
 
 # ============================================================
