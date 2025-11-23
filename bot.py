@@ -3,15 +3,16 @@ from discord.ext import commands
 from discord import app_commands
 import aiohttp
 from datetime import datetime, timedelta, timezone
-from dotenv import load_dotenv
 import os
 
 # ==================== 環境変数の読み込み ====================
-# ローカル環境では .env を読み込み
-load_dotenv()  # Render では無視されるので安全
+# ローカル開発の場合のみ .env を読み込む
+if os.environ.get("RENDER") != "true":
+    from dotenv import load_dotenv
+    load_dotenv()
 
 # DISCORD_TOKEN を取得
-token = os.getenv("DISCORD_TOKEN")
+token = os.environ.get("DISCORD_TOKEN")
 if token is None:
     raise RuntimeError("DISCORD_TOKEN が設定されていません。ローカルなら .env に、Render なら環境変数に追加してください。")
 
