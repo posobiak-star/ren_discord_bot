@@ -112,7 +112,7 @@ async def company_list(interaction: discord.Interaction):
 # ============================================================
 # /company_data コマンド
 # ============================================================
-@bot.tree.command(name="company_data", description="会社の収支情報を表示")
+@bot.tree.command(name="company_money", description="会社の収支情報を表示")
 @app_commands.describe(
     company_id="会社ID（10文字）",
     period="表示する期間"
