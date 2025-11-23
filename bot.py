@@ -14,7 +14,7 @@ if os.environ.get("RENDER") != "true":
 
 token = os.environ.get("DISCORD_TOKEN")
 if token is None:
-    raise RuntimeError("DISCORD_TOKEN が設定されていません。ローカルなら .env に、Render なら環境変数に追加してください。")
+    raise RuntimeError("DISCORD_TOKEN が設定されていません。")
 
 # ==================== Intents ====================
 intents = discord.Intents.default()
@@ -22,7 +22,7 @@ intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ==================== CompanyPaginator ====================
+# ==================== クラス定義 ====================
 class CompanyPaginator(discord.ui.View):
     def __init__(self, companies, owner_id):
         super().__init__(timeout=180)
@@ -49,6 +49,73 @@ class CompanyPaginator(discord.ui.View):
         total_pages = (len(self.companies) - 1) // self.max_per_page + 1
         embed.set_footer(text=f"ページ {self.page + 1}/{total_pages}")
         return embed
+
+    @discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary)
+    async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.owner_id:
+            return await interaction.response.send_message("他のユーザーのボタンは使えません", ephemeral=True)
+        total_pages = (len(self.companies) - 1) // self.max_per_page + 1
+        self.page = (self.page - 1) % total_pages
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+    @discord.ui.button(label="➡️", style=discord.ButtonStyle.secondary)
+    async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.owner_id:
+            return await interaction.response.send_message("他のユーザーのボタンは使えません", ephemeral=True)
+        total_pages = (len(self.companies) - 1) // self.max_per_page + 1
+        self.page = (self.page + 1) % total_pages
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+    @discord.ui.select(
+        placeholder="並び替えを選択",
+        options=[
+            discord.SelectOption(label="設立日順（デフォルト）", value="created"),
+            discord.SelectOption(label="資本金が高い順", value="assets"),
+            discord.SelectOption(label="給料が高い順", value="salary"),
+        ]
+    )
+    async def sort_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+        if interaction.user.id != self.owner_id:
+            return await interaction.response.send_message("他のユーザーのボタンは使えません", ephemeral=True)
+        v = select.values[0]
+        if v == "created":
+            self.companies = list(self.original_companies)
+            self.sort_mode = "設立日順"
+        elif v == "assets":
+            self.companies.sort(key=lambda x: x["assets"], reverse=True)
+            self.sort_mode = "資本金順"
+        elif v == "salary":
+            self.companies.sort(key=lambda x: x["salary"], reverse=True)
+            self.sort_mode = "給料順"
+        self.page = 0
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+class OpinionModalHandler(discord.ui.Modal, title="意見フォーム"):
+    opinion = discord.ui.TextInput(
+        label="意見を入力してください",
+        style=discord.TextStyle.paragraph,
+        placeholder="ここに意見を書いてください",
+        required=True,
+        max_length=500
+    )
+
+    def __init__(self, author_id):
+        super().__init__()
+        self.author_id = author_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        content = str(self.opinion.value)
+        target_user_id = 1250410219662606437
+        target_user = interaction.client.get_user(target_user_id)
+        if target_user is None:
+            target_user = await interaction.client.fetch_user(target_user_id)
+        try:
+            await target_user.send(
+                f"📩 **新しい意見が届きました！**\n送信者: <@{self.author_id}>\n内容:\n```\n{content}\n```"
+            )
+        except Exception as e:
+            print(f"DM送信エラー: {e}")
+        await interaction.response.send_message("送信しました！ありがとうございます！", ephemeral=True)
 
 # ==================== /company_list コマンド ====================
 @bot.tree.command(name="company_list", description="会社情報一覧を表示")
@@ -108,7 +175,8 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
             traded_at = datetime.fromisoformat(h["tradedAt"].replace("Z", "+00:00"))
             if traded_at >= since_time:
                 filtered_history.append(h)
-        except:
+        except Exception as e:
+            print(f"Error parsing tradedAt: {e}")
             continue
 
     total_income = sum(h["amount"] for h in filtered_history if h["amount"] > 0)
@@ -135,7 +203,8 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
     embed.add_field(name="支出", value=f"{total_expense}コイン", inline=True)
 
     if user_summary:
-        lines = [f"<@{uid}> {info['total']}コイン {info['count']}回" 
+        # 回数順にソートして表示
+        lines = [f"<@{uid}>　{info['total']}コイン　{info['count']}回"
                  for uid, info in sorted(user_summary.items(), key=lambda x: x[1]["count"], reverse=True)]
         embed.add_field(name="ユーザー別収入", value="\n".join(lines), inline=False)
 
