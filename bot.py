@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import aiohttp
 from datetime import datetime, timedelta, timezone
+from dotenv import load_dotenv
 import os
 
 # ==================== Intents ====================
@@ -216,5 +217,6 @@ async def on_ready():
     await bot.tree.sync()
     print(f"Logged in as {bot.user}")
 
+load_dotenv()
 token = os.getenv("DISCORD_TOKEN")
 bot.run(token)
