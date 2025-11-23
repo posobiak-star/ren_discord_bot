@@ -120,7 +120,7 @@ async def company_list(interaction: discord.Interaction):
 @app_commands.choices(period=[
     app_commands.Choice(name="7日", value="7d"),
     app_commands.Choice(name="3日", value="3d"),
-    app_commands.Choice(name="24時間", value="24h"),
+    app_commands.Choice(name="1日", value="1d"),
     app_commands.Choice(name="12時間", value="12h"),
     app_commands.Choice(name="6時間", value="6h"),
 ])
