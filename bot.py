@@ -22,6 +22,34 @@ intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# ==================== CompanyPaginator ====================
+class CompanyPaginator(discord.ui.View):
+    def __init__(self, companies, owner_id):
+        super().__init__(timeout=180)
+        self.original_companies = list(companies)
+        self.companies = list(companies)
+        self.page = 0
+        self.max_per_page = 5
+        self.owner_id = owner_id
+        self.sort_mode = "設立日順"
+
+    def get_embed(self):
+        start = self.page * self.max_per_page
+        end = start + self.max_per_page
+        embed = discord.Embed(
+            title=f"会社一覧（{self.sort_mode}）",
+            color=discord.Color.red()
+        )
+        for company in self.companies[start:end]:
+            embed.add_field(
+                name=f"{company['name']} ({company['id']})",
+                value=f"資本金: {company['assets']}コイン\n時給: {company['salary']}コイン",
+                inline=False
+            )
+        total_pages = (len(self.companies) - 1) // self.max_per_page + 1
+        embed.set_footer(text=f"ページ {self.page + 1}/{total_pages}")
+        return embed
+
 # ==================== /company_list コマンド ====================
 @bot.tree.command(name="company_list", description="会社情報一覧を表示")
 async def company_list(interaction: discord.Interaction):
@@ -118,48 +146,6 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
 async def forms(interaction: discord.Interaction):
     modal = OpinionModalHandler(interaction.user.id)
     await interaction.response.send_modal(modal)
-
-# ==================== Admin UI ====================
-class AdminView(discord.ui.View):
-    def __init__(self):
-        super().__init__()
-        options = [
-            discord.SelectOption(label="連携ユーザー一覧", value="list_users"),
-            discord.SelectOption(label="連携解除", value="remove_user")
-        ]
-        self.add_item(AdminSelect(options))
-
-class AdminSelect(discord.ui.Select):
-    def __init__(self, options):
-        super().__init__(placeholder="操作を選択", options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        if self.values[0] == "list_users":
-            data = supabase.table("discord_oauth_users").select("*").order("created_at", desc=True).execute()
-            if not data.data:
-                await interaction.response.send_message("連携ユーザーはいません", ephemeral=True)
-                return
-
-            embed = discord.Embed(title="連携ユーザー一覧", color=discord.Color.blue())
-            for u in data.data:
-                embed.add_field(name=f"{u['display_name']} ({u['username']})", value=f"ID: {u['discord_user_id']}", inline=False)
-
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        elif self.values[0] == "remove_user":
-            modal = AdminRemoveUserModal()
-            await interaction.response.send_modal(modal)
-
-class AdminRemoveUserModal(discord.ui.Modal, title="ユーザー連携解除"):
-    user_id = discord.ui.TextInput(label="ユーザーIDを入力", placeholder="DiscordユーザーID", required=True)
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        uid = self.user_id.value
-        result = supabase.table("discord_oauth_users").delete().eq("discord_user_id", uid).execute()
-        if result.data:
-            await interaction.response.send_message(f"ユーザー {uid} の連携を解除しました", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"ユーザー {uid} は登録されていません", ephemeral=True)
 
 # ==================== Bot Ready ====================
 @bot.event
