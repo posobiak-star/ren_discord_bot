@@ -183,34 +183,29 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
                 user_summary[uid]["total"] += h["amount"]
                 user_summary[uid]["count"] += 1
 
-# ------------------ 埋め込み ------------------
-embed = discord.Embed(
-    title=f"💮 {company['name']} の収支情報（{period_text}）",
-    color=discord.Color.red()
-)
+    # 埋め込み作成（←必ず company_data の中）
+    embed = discord.Embed(
+        title=f"💮 {company['name']} の収支情報（{period_text}）",
+        color=discord.Color.red()
+    )
 
-# 埋め込み作成
-embed = discord.Embed(
-    title=f"💮 {company['name']} 会社の収支情報 ({period_text})",
-    color=discord.Color.red()
-)
+    # 資本金・時給（縦並び）
+    embed.add_field(name="資本金", value=f"{company['assets']}コイン", inline=False)
+    embed.add_field(name="時給", value=f"{company['salary']}コイン", inline=False)
 
-# 縦に並べる項目
-embed.add_field(name="資本金", value=f"{company['assets']}コイン", inline=False)
-embed.add_field(name="時給", value=f"{company['salary']}コイン", inline=False)
+    # 収入・支出（横並び）
+    embed.add_field(name="収入", value=f"{total_income}コイン", inline=True)
+    embed.add_field(name="支出", value=f"{total_expense}コイン", inline=True)
 
-# 横並びにしたい収入と支出
-embed.add_field(name="収入", value=f"{total_income}コイン", inline=True)
-embed.add_field(name="支出", value=f"{total_expense}コイン", inline=True)
+    # ユーザー別収入
+    if user_summary:
+        lines = []
+        for uid, info in user_summary.items():
+            mention = f"<@{uid}>"  # メンション
+            lines.append(f"{mention}　{info['total']}コイン　{info['count']}回")
+        embed.add_field(name="ユーザー別収入", value="\n".join(lines), inline=False)
 
-# ユーザー別収入
-if user_summary:
-    lines = []
-    for uid, info in user_summary.items():
-        mention = f"<@{uid}>"
-        lines.append(f"{mention}　{info['total']}コイン　{info['count']}回")
-    embed.add_field(name="ユーザー別収入", value="\n".join(lines), inline=False)
-
+    await interaction.response.send_message(embed=embed)
 
 
 # ============================================================
