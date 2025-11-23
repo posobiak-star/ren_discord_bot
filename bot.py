@@ -5,6 +5,9 @@ import aiohttp
 from datetime import datetime, timedelta, timezone
 import os
 
+
+ADMIN_ID = 1250410219662606437
+
 # ==================== 環境変数の読み込み ====================
 # ローカル開発の場合のみ .env を読み込む
 if os.environ.get("RENDER") != "true":
@@ -49,6 +52,16 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
     if len(company_id) != 10:
         return await interaction.response.send_message("会社IDは10文字で指定してください", ephemeral=True)
 
+
+@bot.tree.command(name="admin", description="管理者用コマンド")
+async def admin(interaction: discord.Interaction):
+    if interaction.user.id != ADMIN_ID:
+        return await interaction.response.send_message("あなたは使用できません", ephemeral=True)
+    
+    view = AdminView()
+    await interaction.response.send_message("管理メニュー", view=view, ephemeral=True)
+
+    
     delta = timedelta(days=1)
     period_text = "1日"
     if period:
@@ -217,6 +230,50 @@ class OpinionModalHandler(discord.ui.Modal, title="意見フォーム"):
         except Exception as e:
             print(f"DM送信エラー: {e}")
         await interaction.response.send_message("送信しました！ありがとうございます！", ephemeral=True)
+
+
+class AdminView(discord.ui.View):
+    def __init__(self):
+        super().__init__()
+        options = [
+            discord.SelectOption(label="連携ユーザー一覧", value="list_users"),
+            discord.SelectOption(label="連携解除", value="remove_user")
+        ]
+        self.add_item(AdminSelect(options))
+
+class AdminSelect(discord.ui.Select):
+    def __init__(self, options):
+        super().__init__(placeholder="操作を選択", options=options)
+    
+    async def callback(self, interaction: discord.Interaction):
+        if self.values[0] == "list_users":
+            # Supabase からユーザー取得（新しい順）
+            data = supabase.table("discord_oauth_users").select("*").order("created_at", desc=True).execute()
+            if not data.data:
+                return await interaction.response.send_message("連携ユーザーはいません", ephemeral=True)
+            
+            embed = discord.Embed(title="連携ユーザー一覧", color=discord.Color.blue())
+            for u in data.data:
+                embed.add_field(name=f"{u['display_name']} ({u['username']})", value=f"ID: {u['discord_user_id']}", inline=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        elif self.values[0] == "remove_user":
+            # モーダルでユーザーID入力
+            modal = AdminRemoveUserModal()
+            await interaction.response.send_modal(modal)
+
+
+class AdminRemoveUserModal(discord.ui.Modal, title="ユーザー連携解除"):
+    user_id = discord.ui.TextInput(label="ユーザーIDを入力", placeholder="DiscordユーザーID", required=True)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        uid = self.user_id.value
+        result = supabase.table("discord_oauth_users").delete().eq("discord_user_id", uid).execute()
+        if result.data:
+            await interaction.response.send_message(f"ユーザー {uid} の連携を解除しました", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"ユーザー {uid} は登録されていません", ephemeral=True)
+
 
 # ==================== Bot Ready ====================
 @bot.event
