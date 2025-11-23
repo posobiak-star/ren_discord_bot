@@ -189,6 +189,9 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
         color=discord.Color.red()
     )
 
+    # ★ ここに会社IDを追加
+    embed.add_field(name="会社ID", value=company["id"], inline=False)
+
     # 資本金・時給（縦並び）
     embed.add_field(name="資本金", value=f"{company['assets']}コイン", inline=False)
     embed.add_field(name="時給", value=f"{company['salary']}コイン", inline=False)
