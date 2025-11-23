@@ -6,6 +6,15 @@ from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 import os
 
+# ==================== 環境変数の読み込み ====================
+# ローカル環境では .env を読み込み
+load_dotenv()  # Render では無視されるので安全
+
+# DISCORD_TOKEN を取得
+token = os.getenv("DISCORD_TOKEN")
+if token is None:
+    raise RuntimeError("DISCORD_TOKEN が設定されていません。ローカルなら .env に、Render なら環境変数に追加してください。")
+
 # ==================== Intents ====================
 intents = discord.Intents.default()
 intents.members = True
@@ -39,7 +48,6 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
     if len(company_id) != 10:
         return await interaction.response.send_message("会社IDは10文字で指定してください", ephemeral=True)
 
-    # ------------------ 期間処理 ------------------
     delta = timedelta(days=1)
     period_text = "1日"
     if period:
@@ -54,7 +62,6 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
     now = datetime.now(timezone.utc)
     since_time = now - delta
 
-    # ------------------ API取得 ------------------
     async with aiohttp.ClientSession() as session:
         async with session.get(f"https://api.takasumibot.com/v3/company/{company_id}") as resp:
             if resp.status != 200:
@@ -66,7 +73,6 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
                 return await interaction.response.send_message("会社履歴の取得に失敗しました", ephemeral=True)
             history = await resp.json()
 
-    # ------------------ 履歴フィルター ------------------
     filtered_history = []
     for h in history:
         try:
@@ -77,11 +83,9 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
             print(f"Error parsing tradedAt: {e}")
             continue
 
-    # ------------------ 集計 ------------------
     total_income = sum(h["amount"] for h in filtered_history if h["amount"] > 0)
     total_expense = -sum(h["amount"] for h in filtered_history if h["amount"] < 0)
 
-    # ユーザー別
     user_summary = {}
     for h in filtered_history:
         uid = h.get("userId")
@@ -92,7 +96,6 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
                 user_summary[uid]["total"] += h["amount"]
                 user_summary[uid]["count"] += 1
 
-    # ------------------ 埋め込み作成 ------------------
     embed = discord.Embed(
         title=f"💮 {company['name']} の収支情報（{period_text}）",
         color=discord.Color.red()
@@ -217,6 +220,4 @@ async def on_ready():
     await bot.tree.sync()
     print(f"Logged in as {bot.user}")
 
-load_dotenv()
-token = os.getenv("DISCORD_TOKEN")
 bot.run(token)
