@@ -64,8 +64,8 @@ async def check_user_access(user_id: int) -> bool:
         payload = [{"user_id": user_id, "has_access": True}]
         async with aiohttp.ClientSession() as session:
             async with session.post(f"{SUPABASE_URL}/rest/v1/users",
-                                    headers={**headers, "Prefer": "resolution=merge-duplicates"},
-                                    data=json.dumps(payload)) as resp:
+                                     headers={**headers, "Prefer": "resolution=merge-duplicates"},
+                                     data=json.dumps(payload)) as resp:
                 if resp.status not in (200, 201):
                     print(f"Supabase への自動保存に失敗しました: {resp.status}")
         return True
@@ -73,7 +73,8 @@ async def check_user_access(user_id: int) -> bool:
     return False
 
 # ==================== デコレータ修正 ====================
-def require_purchase(ignore_modal: bool = False):
+# defer_ephemeral パラメータを追加し、deferの公開・非公開を制御できるようにしました。
+def require_purchase(ignore_modal: bool = False, defer_ephemeral: bool = False):
     """購入チェックデコレータ。まず購入チェック → 成功したら defer"""
     def decorator(func):
         @wraps(func)
@@ -90,7 +91,8 @@ def require_purchase(ignore_modal: bool = False):
             # --- 購入済みなら defer（後続処理用） ---
             if not ignore_modal:
                 try:
-                    await interaction.response.defer(ephemeral=False)
+                    # defer_ephemeral パラメータで defer の公開・非公開を設定
+                    await interaction.response.defer(ephemeral=defer_ephemeral)
                 except Exception:
                     pass  # まれに既に defer 済みの場合あり
 
@@ -169,6 +171,7 @@ class CompanyPaginator(discord.ui.View):
 
 # ==================== /company_list ====================
 
+# /company_list は結果が公開で問題ないため、defer_ephemeral=False (デフォルト) のまま
 @bot.tree.command(name="company_list", description="会社情報一覧を表示")
 @require_purchase()
 async def company_list(interaction: discord.Interaction):
@@ -177,10 +180,14 @@ async def company_list(interaction: discord.Interaction):
             companies = await resp.json()
 
     view = CompanyPaginator(companies, interaction.user.id)
+    # デコレータで既に defer 済みなので followup.send を使用 (ephemeral=Falseで公開)
     await interaction.followup.send(embed=view.get_embed(), view=view, ephemeral=False)
 
+# ==================== /company_money ====================
+
 @bot.tree.command(name="company_money", description="会社の収支情報を表示")
-@require_purchase()
+# defer_ephemeral=True を設定し、処理中のメッセージを非公開にします。
+@require_purchase(defer_ephemeral=True)
 @app_commands.describe(
     company_id="会社ID（10文字）",
     period="表示する期間"
@@ -193,16 +200,15 @@ async def company_list(interaction: discord.Interaction):
     app_commands.Choice(name="6時間", value="6h"),
 ])
 async def company_data(interaction: discord.Interaction, company_id: str, period: app_commands.Choice[str] = None):
-    # --- defer前にバリデーション ---
+    # --- バリデーション（エラーメッセージは常に使用者のみに表示） ---
+    # デコレータが既に defer を行っているため、必ず followup.send が使われます
     if len(company_id) != 10:
         if not interaction.response.is_done():
+            # 念のため pre-defer path を残すが、ほぼ通らない
             return await interaction.response.send_message("会社IDは10文字で指定してください", ephemeral=True)
         else:
+            # defer後: 非公開のフォローアップでエラーを送信
             return await interaction.followup.send("会社IDは10文字で指定してください", ephemeral=True)
-
-    # --- deferで処理中マーク ---
-    if not interaction.response.is_done():
-        await interaction.response.defer(ephemeral=False)
 
     # --- 期間計算 ---
     delta = timedelta(days=1)
@@ -221,17 +227,21 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
 
     # --- API取得 ---
     async with aiohttp.ClientSession() as session:
+        # 会社情報の取得
         async with session.get(f"https://api.takasumibot.com/v3/company/{company_id}") as resp:
             if resp.status != 200:
+                # APIエラーが発生した場合、フォローアップメッセージを ephemeral=True で送信
                 return await interaction.followup.send("会社情報の取得に失敗しました", ephemeral=True)
             company = await resp.json()
 
+        # 会社履歴の取得
         async with session.get(f"https://api.takasumibot.com/v3/companyHistory/{company_id}") as resp:
             if resp.status != 200:
+                # APIエラーが発生した場合、フォローアップメッセージを ephemeral=True で送信
                 return await interaction.followup.send("会社履歴の取得に失敗しました", ephemeral=True)
             history = await resp.json()
 
-    # --- 履歴フィルタ ---
+    # --- 履歴フィルタ (集計処理は省略) ---
     filtered_history = [
         h for h in history
         if datetime.fromisoformat(h["tradedAt"].replace("Z", "+00:00")) >= since_time
@@ -269,7 +279,10 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
         ]
         embed.add_field(name="ユーザー別収入", value="\n".join(lines), inline=False)
 
-    await interaction.followup.send(embed=embed)
+    # --- 成功時: 非公開の処理中メッセージを削除し、結果を公開で送信 ---
+    # 非公開 defer のため、結果を公開にするには一度削除してチャンネルに直接送る必要があります。
+    await interaction.delete_original_response()
+    await interaction.channel.send(embed=embed)
 
 
 # ==================== /forms ====================
