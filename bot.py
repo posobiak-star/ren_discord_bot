@@ -2,9 +2,9 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import aiohttp
-import aiosqlite
 from datetime import datetime, timedelta, timezone
 import os
+import json
 from functools import wraps
 
 ADMIN_ID = 1250410219662606437
@@ -15,8 +15,13 @@ if os.environ.get("RENDER") != "true":
     load_dotenv()
 
 token = os.environ.get("DISCORD_TOKEN")
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
 if token is None:
     raise RuntimeError("DISCORD_TOKEN が設定されていません。")
+if SUPABASE_URL is None or SUPABASE_KEY is None:
+    raise RuntimeError("SUPABASE_URL または SUPABASE_KEY が設定されていません。")
 
 # ==================== Intents ====================
 intents = discord.Intents.default()
@@ -24,50 +29,45 @@ intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-
-# ============================================================
-#   購入チェック（REN+）
-# ============================================================
+# ==================== 購入チェック（Supabase + API） ====================
 
 async def check_user_access(user_id: int) -> bool:
-    """SQLite → API の順にチェックする"""
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
 
-    # --- SQLite(Supabase) チェック ---
-    async with aiosqlite.connect("supabase.db") as db:
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                has_access INTEGER DEFAULT 0
-            )
-        """)
-        await db.commit()
+    # --- Supabase で購入チェック ---
+    async with aiohttp.ClientSession() as session:
+        url = f"{SUPABASE_URL}/rest/v1/users?user_id=eq.{user_id}&select=*"
+        async with session.get(url, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                if data and data[0].get("has_access"):
+                    return True
 
-        cur = await db.execute("SELECT has_access FROM users WHERE user_id = ?", (user_id,))
-        row = await cur.fetchone()
-
-    if row and row[0] == 1:
-        return True
-
-    # --- API から REN+ 購入確認 ---
+    # --- Supabaseに無ければ API から確認 ---
     async with aiohttp.ClientSession() as session:
         async with session.get(f"https://api.takasumibot.com/v3/history/{user_id}") as resp:
             if resp.status != 200:
                 return False
-            data = await resp.json()
+            api_data = await resp.json()
 
-    owns_ren = any("REN+" in h.get("reason", "") for h in data)
+    owns_ren = any("REN+" in h.get("reason", "") for h in api_data)
 
+    # --- 購入済みなら Supabase に自動保存 ---
     if owns_ren:
-        async with aiosqlite.connect("supabase.db") as db:
-            await db.execute(
-                "INSERT OR REPLACE INTO users (user_id, has_access) VALUES (?, 1)",
-                (user_id,)
-            )
-            await db.commit()
+        payload = [{"user_id": user_id, "has_access": True}]
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{SUPABASE_URL}/rest/v1/users",
+                                    headers={**headers, "Prefer": "resolution=merge-duplicates"},
+                                    data=json.dumps(payload)) as resp:
+                if resp.status not in (200, 201):
+                    print(f"Supabase への自動保存に失敗しました: {resp.status}")
         return True
 
     return False
-
 
 def require_purchase(ignore_modal: bool = False):
     """購入チェックデコレータ。forms などモーダル用に defer をスキップ可能"""
@@ -94,10 +94,7 @@ def require_purchase(ignore_modal: bool = False):
         return wrapper
     return decorator
 
-
-# ============================================================
-#   UI クラス（会社一覧表示用）
-# ============================================================
+# ==================== UI クラス（会社一覧表示用） ====================
 
 class CompanyPaginator(discord.ui.View):
     def __init__(self, companies, owner_id):
@@ -166,10 +163,7 @@ class CompanyPaginator(discord.ui.View):
         self.page = 0
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-
-# ============================================================
-#   /company_list
-# ============================================================
+# ==================== /company_list ====================
 
 @bot.tree.command(name="company_list", description="会社情報一覧を表示")
 @require_purchase()
@@ -181,10 +175,7 @@ async def company_list(interaction: discord.Interaction):
     view = CompanyPaginator(companies, interaction.user.id)
     await interaction.followup.send(embed=view.get_embed(), view=view, ephemeral=True)
 
-
-# ============================================================
-#   /company_money
-# ============================================================
+# ==================== /company_money ====================
 
 @bot.tree.command(name="company_money", description="会社の収支情報を表示")
 @require_purchase()
@@ -226,14 +217,8 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
                 return await interaction.followup.send("会社履歴の取得に失敗しました", ephemeral=True)
             history = await resp.json()
 
-    filtered_history = []
-    for h in history:
-        try:
-            traded_at = datetime.fromisoformat(h["tradedAt"].replace("Z", "+00:00"))
-            if traded_at >= since_time:
-                filtered_history.append(h)
-        except:
-            continue
+    filtered_history = [h for h in history
+                        if datetime.fromisoformat(h["tradedAt"].replace("Z", "+00:00")) >= since_time]
 
     total_income = sum(h["amount"] for h in filtered_history if h["amount"] > 0)
     total_expense = -sum(h["amount"] for h in filtered_history if h["amount"] < 0)
@@ -265,10 +250,7 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
 
     await interaction.followup.send(embed=embed)
 
-
-# ============================================================
-#   /forms
-# ============================================================
+# ==================== /forms ====================
 
 class OpinionModalHandler(discord.ui.Modal, title="意見フォーム"):
     opinion = discord.ui.TextInput(
@@ -285,10 +267,7 @@ class OpinionModalHandler(discord.ui.Modal, title="意見フォーム"):
 
     async def on_submit(self, interaction: discord.Interaction):
         content = str(self.opinion.value)
-        target_user_id = 1250410219662606437
-        target_user = interaction.client.get_user(target_user_id)
-        if target_user is None:
-            target_user = await interaction.client.fetch_user(target_user_id)
+        target_user = interaction.client.get_user(ADMIN_ID) or await interaction.client.fetch_user(ADMIN_ID)
         try:
             await target_user.send(
                 f"📩 **新しい意見が届きました！**\n送信者: <@{self.author_id}>\n内容:\n```\n{content}\n```"
@@ -299,20 +278,16 @@ class OpinionModalHandler(discord.ui.Modal, title="意見フォーム"):
 
 
 @bot.tree.command(name="forms", description="意見や要望を送信します")
-@require_purchase(ignore_modal=True)  # ← defer スキップ
+@require_purchase(ignore_modal=True)
 async def forms(interaction: discord.Interaction):
     modal = OpinionModalHandler(interaction.user.id)
-    await interaction.response.send_modal(modal)  # ← これで安全
+    await interaction.response.send_modal(modal)
 
-
-# ============================================================
-#   Bot Ready
-# ============================================================
+# ==================== Bot Ready ====================
 
 @bot.event
 async def on_ready():
     await bot.tree.sync()
     print(f"Logged in as {bot.user}")
-
 
 bot.run(token)
