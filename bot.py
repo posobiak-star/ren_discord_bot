@@ -55,10 +55,9 @@ async def check_user_access(user_id: int) -> bool:
             api_data = await resp.json()
 
     owns_ren = any(
-    h.get("amount") == -50000 and "REN+" in h.get("reason", "")
-    for h in api_data
-)
-
+        h.get("amount") == -50000 and "REN+" in h.get("reason", "")
+        for h in api_data
+    )
 
     # --- 購入済みなら Supabase に自動保存 ---
     if owns_ren:
@@ -73,26 +72,27 @@ async def check_user_access(user_id: int) -> bool:
 
     return False
 
+# ==================== デコレータ修正 ====================
 def require_purchase(ignore_modal: bool = False):
-    """購入チェックデコレータ。forms などモーダル用に defer をスキップ可能"""
+    """購入チェックデコレータ。まず購入チェック → 成功したら defer"""
     def decorator(func):
         @wraps(func)
         async def wrapper(interaction: discord.Interaction, *args, **kwargs):
-            if not ignore_modal:
-                await interaction.response.defer(ephemeral=False)
-
+            # --- まず購入チェックだけ実行 ---
             ok = await check_user_access(interaction.user.id)
             if not ok:
-                if not ignore_modal:
-                    return await interaction.followup.send(
-                        "Takasumi botで購入してからご利用ください",
-                        ephemeral=True
-                    )
-                else:
-                    return await interaction.response.send_message(
-                        "Takasumi botで購入してからご利用ください",
-                        ephemeral=True
-                    )
+                # 失敗時は必ず response で ephemeral 送信
+                return await interaction.response.send_message(
+                    "Takasumi botで購入してからご利用ください",
+                    ephemeral=True
+                )
+
+            # --- 購入済みなら defer（後続処理用） ---
+            if not ignore_modal:
+                try:
+                    await interaction.response.defer(ephemeral=False)
+                except Exception:
+                    pass  # まれに既に defer 済みの場合あり
 
             return await func(interaction, *args, **kwargs)
         return wrapper
@@ -179,8 +179,6 @@ async def company_list(interaction: discord.Interaction):
     view = CompanyPaginator(companies, interaction.user.id)
     await interaction.followup.send(embed=view.get_embed(), view=view, ephemeral=False)
 
-# ==================== /company_money ====================
-
 @bot.tree.command(name="company_money", description="会社の収支情報を表示")
 @require_purchase()
 @app_commands.describe(
@@ -195,21 +193,33 @@ async def company_list(interaction: discord.Interaction):
     app_commands.Choice(name="6時間", value="6h"),
 ])
 async def company_data(interaction: discord.Interaction, company_id: str, period: app_commands.Choice[str] = None):
+    # --- defer前にバリデーション ---
     if len(company_id) != 10:
-        return await interaction.response.send_message("会社IDは10文字で指定してください", ephemeral=True)
+        if not interaction.response.is_done():
+            return await interaction.response.send_message("会社IDは10文字で指定してください", ephemeral=True)
+        else:
+            return await interaction.followup.send("会社IDは10文字で指定してください", ephemeral=True)
 
+    # --- deferで処理中マーク ---
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=False)
+
+    # --- 期間計算 ---
     delta = timedelta(days=1)
     period_text = "1日"
     if period:
         val = period.value
         if val.endswith("d"):
-            delta = timedelta(days=int(val[:-1])); period_text = f"{val[:-1]}日"
+            delta = timedelta(days=int(val[:-1]))
+            period_text = f"{val[:-1]}日"
         elif val.endswith("h"):
-            delta = timedelta(hours=int(val[:-1])); period_text = f"{val[:-1]}時間"
+            delta = timedelta(hours=int(val[:-1]))
+            period_text = f"{val[:-1]}時間"
 
     now = datetime.now(timezone.utc)
     since_time = now - delta
 
+    # --- API取得 ---
     async with aiohttp.ClientSession() as session:
         async with session.get(f"https://api.takasumibot.com/v3/company/{company_id}") as resp:
             if resp.status != 200:
@@ -221,12 +231,16 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
                 return await interaction.followup.send("会社履歴の取得に失敗しました", ephemeral=True)
             history = await resp.json()
 
-    filtered_history = [h for h in history
-                        if datetime.fromisoformat(h["tradedAt"].replace("Z", "+00:00")) >= since_time]
+    # --- 履歴フィルタ ---
+    filtered_history = [
+        h for h in history
+        if datetime.fromisoformat(h["tradedAt"].replace("Z", "+00:00")) >= since_time
+    ]
 
     total_income = sum(h["amount"] for h in filtered_history if h["amount"] > 0)
     total_expense = -sum(h["amount"] for h in filtered_history if h["amount"] < 0)
 
+    # --- ユーザー別集計 ---
     user_summary = {}
     for h in filtered_history:
         uid = h.get("userId")
@@ -237,6 +251,7 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
                 user_summary[uid]["total"] += h["amount"]
                 user_summary[uid]["count"] += 1
 
+    # --- Embed作成 ---
     embed = discord.Embed(
         title=f"💮 {company['name']} の収支情報（{period_text}）",
         color=discord.Color.red()
@@ -248,11 +263,14 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
     embed.add_field(name="支出", value=f"{total_expense}コイン", inline=True)
 
     if user_summary:
-        lines = [f"<@{uid}>　{info['total']}コイン　{info['count']}回"
-                 for uid, info in sorted(user_summary.items(), key=lambda x: x[1]["count"], reverse=True)]
+        lines = [
+            f"<@{uid}>　{info['total']}コイン　{info['count']}回"
+            for uid, info in sorted(user_summary.items(), key=lambda x: x[1]["count"], reverse=True)
+        ]
         embed.add_field(name="ユーザー別収入", value="\n".join(lines), inline=False)
 
     await interaction.followup.send(embed=embed)
+
 
 # ==================== /forms ====================
 
