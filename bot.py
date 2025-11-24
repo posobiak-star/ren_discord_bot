@@ -196,7 +196,7 @@ async def company_list(interaction: discord.Interaction):
 ])
 async def company_data(interaction: discord.Interaction, company_id: str, period: app_commands.Choice[str] = None):
     if len(company_id) != 10:
-        return await interaction.followup.send("会社IDは10文字で指定してください", ephemeral=True)
+        return await interaction.response.send_message("会社IDは10文字で指定してください", ephemeral=True)
 
     delta = timedelta(days=1)
     period_text = "1日"
