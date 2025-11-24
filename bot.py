@@ -79,7 +79,7 @@ def require_purchase(ignore_modal: bool = False):
         @wraps(func)
         async def wrapper(interaction: discord.Interaction, *args, **kwargs):
             if not ignore_modal:
-                await interaction.response.defer(ephemeral=True)
+                await interaction.response.defer(ephemeral=False)
 
             ok = await check_user_access(interaction.user.id)
             if not ok:
@@ -177,7 +177,7 @@ async def company_list(interaction: discord.Interaction):
             companies = await resp.json()
 
     view = CompanyPaginator(companies, interaction.user.id)
-    await interaction.followup.send(embed=view.get_embed(), view=view, ephemeral=True)
+    await interaction.followup.send(embed=view.get_embed(), view=view, ephemeral=False)
 
 # ==================== /company_money ====================
 
