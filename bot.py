@@ -2,8 +2,10 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import aiohttp
+import aiosqlite
 from datetime import datetime, timedelta, timezone
 import os
+from functools import wraps
 
 ADMIN_ID = 1250410219662606437
 
@@ -22,7 +24,81 @@ intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ==================== クラス定義 ====================
+
+# ============================================================
+#   購入チェック（REN+）
+# ============================================================
+
+async def check_user_access(user_id: int) -> bool:
+    """SQLite → API の順にチェックする"""
+
+    # --- SQLite(Supabase) チェック ---
+    async with aiosqlite.connect("supabase.db") as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                has_access INTEGER DEFAULT 0
+            )
+        """)
+        await db.commit()
+
+        cur = await db.execute("SELECT has_access FROM users WHERE user_id = ?", (user_id,))
+        row = await cur.fetchone()
+
+    if row and row[0] == 1:
+        return True
+
+    # --- API から REN+ 購入確認 ---
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"https://api.takasumibot.com/v3/history/{user_id}") as resp:
+            if resp.status != 200:
+                return False
+            data = await resp.json()
+
+    owns_ren = any("REN+" in h.get("reason", "") for h in data)
+
+    if owns_ren:
+        async with aiosqlite.connect("supabase.db") as db:
+            await db.execute(
+                "INSERT OR REPLACE INTO users (user_id, has_access) VALUES (?, 1)",
+                (user_id,)
+            )
+            await db.commit()
+        return True
+
+    return False
+
+
+def require_purchase(ignore_modal: bool = False):
+    """購入チェックデコレータ。forms などモーダル用に defer をスキップ可能"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(interaction: discord.Interaction, *args, **kwargs):
+            if not ignore_modal:
+                await interaction.response.defer(ephemeral=True)
+
+            ok = await check_user_access(interaction.user.id)
+            if not ok:
+                if not ignore_modal:
+                    return await interaction.followup.send(
+                        "Takasumi botで購入してからご利用ください",
+                        ephemeral=True
+                    )
+                else:
+                    return await interaction.response.send_message(
+                        "Takasumi botで購入してからご利用ください",
+                        ephemeral=True
+                    )
+
+            return await func(interaction, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
+# ============================================================
+#   UI クラス（会社一覧表示用）
+# ============================================================
+
 class CompanyPaginator(discord.ui.View):
     def __init__(self, companies, owner_id):
         super().__init__(timeout=180)
@@ -90,45 +166,28 @@ class CompanyPaginator(discord.ui.View):
         self.page = 0
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-class OpinionModalHandler(discord.ui.Modal, title="意見フォーム"):
-    opinion = discord.ui.TextInput(
-        label="意見を入力してください",
-        style=discord.TextStyle.paragraph,
-        placeholder="ここに意見を書いてください",
-        required=True,
-        max_length=500
-    )
 
-    def __init__(self, author_id):
-        super().__init__()
-        self.author_id = author_id
+# ============================================================
+#   /company_list
+# ============================================================
 
-    async def on_submit(self, interaction: discord.Interaction):
-        content = str(self.opinion.value)
-        target_user_id = 1250410219662606437
-        target_user = interaction.client.get_user(target_user_id)
-        if target_user is None:
-            target_user = await interaction.client.fetch_user(target_user_id)
-        try:
-            await target_user.send(
-                f"📩 **新しい意見が届きました！**\n送信者: <@{self.author_id}>\n内容:\n```\n{content}\n```"
-            )
-        except Exception as e:
-            print(f"DM送信エラー: {e}")
-        await interaction.response.send_message("送信しました！ありがとうございます！", ephemeral=True)
-
-# ==================== /company_list コマンド ====================
 @bot.tree.command(name="company_list", description="会社情報一覧を表示")
+@require_purchase()
 async def company_list(interaction: discord.Interaction):
     async with aiohttp.ClientSession() as session:
         async with session.get("https://api.takasumibot.com/v3/companylist/") as resp:
             companies = await resp.json()
 
     view = CompanyPaginator(companies, interaction.user.id)
-    await interaction.response.send_message(embed=view.get_embed(), view=view)
+    await interaction.followup.send(embed=view.get_embed(), view=view, ephemeral=True)
 
-# ==================== /company_money コマンド ====================
+
+# ============================================================
+#   /company_money
+# ============================================================
+
 @bot.tree.command(name="company_money", description="会社の収支情報を表示")
+@require_purchase()
 @app_commands.describe(
     company_id="会社ID（10文字）",
     period="表示する期間"
@@ -142,18 +201,16 @@ async def company_list(interaction: discord.Interaction):
 ])
 async def company_data(interaction: discord.Interaction, company_id: str, period: app_commands.Choice[str] = None):
     if len(company_id) != 10:
-        return await interaction.response.send_message("会社IDは10文字で指定してください", ephemeral=True)
+        return await interaction.followup.send("会社IDは10文字で指定してください", ephemeral=True)
 
     delta = timedelta(days=1)
     period_text = "1日"
     if period:
         val = period.value
         if val.endswith("d"):
-            delta = timedelta(days=int(val[:-1]))
-            period_text = f"{val[:-1]}日"
+            delta = timedelta(days=int(val[:-1])); period_text = f"{val[:-1]}日"
         elif val.endswith("h"):
-            delta = timedelta(hours=int(val[:-1]))
-            period_text = f"{val[:-1]}時間"
+            delta = timedelta(hours=int(val[:-1])); period_text = f"{val[:-1]}時間"
 
     now = datetime.now(timezone.utc)
     since_time = now - delta
@@ -161,12 +218,12 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
     async with aiohttp.ClientSession() as session:
         async with session.get(f"https://api.takasumibot.com/v3/company/{company_id}") as resp:
             if resp.status != 200:
-                return await interaction.response.send_message("会社情報の取得に失敗しました", ephemeral=True)
+                return await interaction.followup.send("会社情報の取得に失敗しました", ephemeral=True)
             company = await resp.json()
 
         async with session.get(f"https://api.takasumibot.com/v3/companyHistory/{company_id}") as resp:
             if resp.status != 200:
-                return await interaction.response.send_message("会社履歴の取得に失敗しました", ephemeral=True)
+                return await interaction.followup.send("会社履歴の取得に失敗しました", ephemeral=True)
             history = await resp.json()
 
     filtered_history = []
@@ -175,8 +232,7 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
             traded_at = datetime.fromisoformat(h["tradedAt"].replace("Z", "+00:00"))
             if traded_at >= since_time:
                 filtered_history.append(h)
-        except Exception as e:
-            print(f"Error parsing tradedAt: {e}")
+        except:
             continue
 
     total_income = sum(h["amount"] for h in filtered_history if h["amount"] > 0)
@@ -203,23 +259,60 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
     embed.add_field(name="支出", value=f"{total_expense}コイン", inline=True)
 
     if user_summary:
-        # 回数順にソートして表示
         lines = [f"<@{uid}>　{info['total']}コイン　{info['count']}回"
                  for uid, info in sorted(user_summary.items(), key=lambda x: x[1]["count"], reverse=True)]
         embed.add_field(name="ユーザー別収入", value="\n".join(lines), inline=False)
 
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)
 
-# ==================== /forms コマンド ====================
+
+# ============================================================
+#   /forms
+# ============================================================
+
+class OpinionModalHandler(discord.ui.Modal, title="意見フォーム"):
+    opinion = discord.ui.TextInput(
+        label="意見を入力してください",
+        style=discord.TextStyle.paragraph,
+        placeholder="ここに意見を書いてください",
+        required=True,
+        max_length=500
+    )
+
+    def __init__(self, author_id):
+        super().__init__()
+        self.author_id = author_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        content = str(self.opinion.value)
+        target_user_id = 1250410219662606437
+        target_user = interaction.client.get_user(target_user_id)
+        if target_user is None:
+            target_user = await interaction.client.fetch_user(target_user_id)
+        try:
+            await target_user.send(
+                f"📩 **新しい意見が届きました！**\n送信者: <@{self.author_id}>\n内容:\n```\n{content}\n```"
+            )
+        except:
+            pass
+        await interaction.response.send_message("送信しました！ありがとうございます！", ephemeral=True)
+
+
 @bot.tree.command(name="forms", description="意見や要望を送信します")
+@require_purchase(ignore_modal=True)  # ← defer スキップ
 async def forms(interaction: discord.Interaction):
     modal = OpinionModalHandler(interaction.user.id)
-    await interaction.response.send_modal(modal)
+    await interaction.response.send_modal(modal)  # ← これで安全
 
-# ==================== Bot Ready ====================
+
+# ============================================================
+#   Bot Ready
+# ============================================================
+
 @bot.event
 async def on_ready():
     await bot.tree.sync()
     print(f"Logged in as {bot.user}")
+
 
 bot.run(token)
