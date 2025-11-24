@@ -186,8 +186,8 @@ async def company_list(interaction: discord.Interaction):
 # ==================== /company_money ====================
 
 @bot.tree.command(name="company_money", description="会社の収支情報を表示")
-# defer_ephemeral=True を設定し、処理中のメッセージを非公開にします。
-@require_purchase(defer_ephemeral=True)
+# defer_ephemeral=False に変更し、処理中のメッセージを公開にする
+@require_purchase(defer_ephemeral=False)
 @app_commands.describe(
     company_id="会社ID（10文字）",
     period="表示する期間"
@@ -201,14 +201,12 @@ async def company_list(interaction: discord.Interaction):
 ])
 async def company_data(interaction: discord.Interaction, company_id: str, period: app_commands.Choice[str] = None):
     # --- バリデーション（エラーメッセージは常に使用者のみに表示） ---
-    # デコレータが既に defer を行っているため、必ず followup.send が使われます
     if len(company_id) != 10:
-        if not interaction.response.is_done():
-            # 念のため pre-defer path を残すが、ほぼ通らない
-            return await interaction.response.send_message("会社IDは10文字で指定してください", ephemeral=True)
-        else:
-            # defer後: 非公開のフォローアップでエラーを送信
-            return await interaction.followup.send("会社IDは10文字で指定してください", ephemeral=True)
+        # 公開の 'Bot is thinking...' を削除
+        await interaction.delete_original_response() 
+        
+        # defer後: 非公開のフォローアップでエラーを送信
+        return await interaction.followup.send("会社IDは10文字で指定してください", ephemeral=True)
 
     # --- 期間計算 ---
     delta = timedelta(days=1)
@@ -230,6 +228,9 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
         # 会社情報の取得
         async with session.get(f"https://api.takasumibot.com/v3/company/{company_id}") as resp:
             if resp.status != 200:
+                # 公開の 'Bot is thinking...' を削除
+                await interaction.delete_original_response()
+                
                 # APIエラーが発生した場合、フォローアップメッセージを ephemeral=True で送信
                 return await interaction.followup.send("会社情報の取得に失敗しました", ephemeral=True)
             company = await resp.json()
@@ -237,6 +238,9 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
         # 会社履歴の取得
         async with session.get(f"https://api.takasumibot.com/v3/companyHistory/{company_id}") as resp:
             if resp.status != 200:
+                # 公開の 'Bot is thinking...' を削除
+                await interaction.delete_original_response()
+
                 # APIエラーが発生した場合、フォローアップメッセージを ephemeral=True で送信
                 return await interaction.followup.send("会社履歴の取得に失敗しました", ephemeral=True)
             history = await resp.json()
@@ -279,10 +283,8 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
         ]
         embed.add_field(name="ユーザー別収入", value="\n".join(lines), inline=False)
 
-    # --- 成功時: 非公開の処理中メッセージを削除し、結果を公開で送信 ---
-    # 非公開 defer のため、結果を公開にするには一度削除してチャンネルに直接送る必要があります。
-    await interaction.delete_original_response()
-    await interaction.channel.send(embed=embed)
+    # 成功時: 最初の公開 defer メッセージを編集し、結果を公開返信として表示します。
+    await interaction.edit_original_response(embed=embed)
 
 
 # ==================== /forms ====================
