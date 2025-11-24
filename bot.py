@@ -89,6 +89,7 @@ def require_purchase(ignore_modal: bool = False, defer_ephemeral: bool = False):
                 )
 
             # --- 購入済みなら defer（後続処理用） ---
+            # ignore_modal=True の場合、deferをスキップ
             if not ignore_modal:
                 try:
                     # defer_ephemeral パラメータで defer の公開・非公開を設定
@@ -183,11 +184,10 @@ async def company_list(interaction: discord.Interaction):
     # デコレータで既に defer 済みなので followup.send を使用 (ephemeral=Falseで公開)
     await interaction.followup.send(embed=view.get_embed(), view=view, ephemeral=False)
 
-# ==================== /company_money ====================
+# ==================== /company_money (処理中表示なし) ====================
 
 @bot.tree.command(name="company_money", description="会社の収支情報を表示")
-# defer_ephemeral=False に変更し、処理中のメッセージを公開にする
-@require_purchase(defer_ephemeral=False)
+@require_purchase(ignore_modal=True)  # defer をスキップ
 @app_commands.describe(
     company_id="会社ID（10文字）",
     period="表示する期間"
@@ -200,13 +200,12 @@ async def company_list(interaction: discord.Interaction):
     app_commands.Choice(name="6時間", value="6h"),
 ])
 async def company_data(interaction: discord.Interaction, company_id: str, period: app_commands.Choice[str] = None):
-    # --- バリデーション（エラーメッセージは常に使用者のみに表示） ---
+    # --- バリデーション（最初にチェック） ---
     if len(company_id) != 10:
-        # 公開の 'Bot is thinking...' を削除
-        await interaction.delete_original_response() 
-        
-        # defer後: 非公開のフォローアップでエラーを送信
-        return await interaction.followup.send("会社IDは10文字で指定してください", ephemeral=True)
+        return await interaction.response.send_message(
+            "会社IDは10文字で指定してください",
+            ephemeral=True
+        )
 
     # --- 期間計算 ---
     delta = timedelta(days=1)
@@ -225,27 +224,21 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
 
     # --- API取得 ---
     async with aiohttp.ClientSession() as session:
-        # 会社情報の取得
         async with session.get(f"https://api.takasumibot.com/v3/company/{company_id}") as resp:
             if resp.status != 200:
-                # 公開の 'Bot is thinking...' を削除
-                await interaction.delete_original_response()
-                
-                # APIエラーが発生した場合、フォローアップメッセージを ephemeral=True で送信
-                return await interaction.followup.send("会社情報の取得に失敗しました", ephemeral=True)
+                return await interaction.response.send_message(
+                    "会社情報の取得に失敗しました", ephemeral=True
+                )
             company = await resp.json()
 
-        # 会社履歴の取得
         async with session.get(f"https://api.takasumibot.com/v3/companyHistory/{company_id}") as resp:
             if resp.status != 200:
-                # 公開の 'Bot is thinking...' を削除
-                await interaction.delete_original_response()
-
-                # APIエラーが発生した場合、フォローアップメッセージを ephemeral=True で送信
-                return await interaction.followup.send("会社履歴の取得に失敗しました", ephemeral=True)
+                return await interaction.response.send_message(
+                    "会社履歴の取得に失敗しました", ephemeral=True
+                )
             history = await resp.json()
 
-    # --- 履歴フィルタ (集計処理は省略) ---
+    # --- 履歴フィルタ・集計 ---
     filtered_history = [
         h for h in history
         if datetime.fromisoformat(h["tradedAt"].replace("Z", "+00:00")) >= since_time
@@ -254,7 +247,6 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
     total_income = sum(h["amount"] for h in filtered_history if h["amount"] > 0)
     total_expense = -sum(h["amount"] for h in filtered_history if h["amount"] < 0)
 
-    # --- ユーザー別集計 ---
     user_summary = {}
     for h in filtered_history:
         uid = h.get("userId")
@@ -283,8 +275,9 @@ async def company_data(interaction: discord.Interaction, company_id: str, period
         ]
         embed.add_field(name="ユーザー別収入", value="\n".join(lines), inline=False)
 
-    # 成功時: 最初の公開 defer メッセージを編集し、結果を公開返信として表示します。
-    await interaction.edit_original_response(embed=embed)
+    # --- 結果送信（最初に処理中メッセージなし） ---
+    await interaction.response.send_message(embed=embed, ephemeral=False)
+
 
 
 # ==================== /forms ====================
