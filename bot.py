@@ -54,7 +54,11 @@ async def check_user_access(user_id: int) -> bool:
                 return False
             api_data = await resp.json()
 
-    owns_ren = any("REN+" in h.get("reason", "") for h in api_data)
+    owns_ren = any(
+    h.get("amount") == -50000 and "REN+" in h.get("reason", "")
+    for h in api_data
+)
+
 
     # --- 購入済みなら Supabase に自動保存 ---
     if owns_ren:
